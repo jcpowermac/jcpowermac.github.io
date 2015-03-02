@@ -4,6 +4,53 @@ title: Hanlon now supports Windows provisioning!
 ---
 
 
+# DHCP Changes
+
+{% highlight bash %}
+
+option space hanlon;
+option hanlon.server code 224 = ip-address;
+option hanlon.port code 225 = unsigned integer 16;
+option hanlon.base_uri code 226 = text;
+
+
+option hanlon_server code 224 = ip-address;
+option hanlon_port code 225 = unsigned integer 16;
+option hanlon_base_uri code 226 = text;
+
+
+subnet 192.168.122.0 netmask 255.255.255.0 {
+	class "MSFT" {
+		match if substring (option vendor-class-identifier, 0, 4) = "MSFT";
+		option hanlon.server 192.168.122.254;
+        	option hanlon.port 8026;
+	        option hanlon.base_uri "/hanlon/api/v1";
+        	vendor-option-space hanlon;
+	}	
+	class "OTHER" {
+		match if substring (option vendor-class-identifier, 0, 4) != "MSFT";
+		option hanlon_server 192.168.122.254;
+        	option hanlon_port 8026;
+	        option hanlon_base_uri "/hanlon/api/v1";
+	}
+
+
+        range 192.168.122.100 192.168.122.200;
+        option routers 192.168.122.1;
+        option subnet-mask 255.255.255.0;
+        option domain-name              "automation.local";
+        next-server 192.168.122.254;
+        option tftp-server-name "192.168.122.254"; 	
+
+        if exists user-class and option user-class = "iPXE" {
+                filename "hanlon.ipxe";
+        } else {
+                filename "undionly.kpxe";
+        }
+}
+
+{% endhighlight %}
+
 # WinPE Build Process
 
 We tried to make this as painless as possible.  
