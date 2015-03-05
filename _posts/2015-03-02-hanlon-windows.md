@@ -85,7 +85,8 @@ class "MSFT" {
 }
 {% endhighlight %}
 
-We create an object based on the values retrieved from the `vendor-encapsulated-options` section of the registry.  The object properties are used to construct the proper uri to the RESTful endpoint of Hanlon.  Since there isn't a method to pass boot time arguments to Windows we use WMI to determine the SMBIOS uuid which can be used in a RESTful request to retrieve the `active_model`.  Once the active_model is determined the `windows_install.erb` is requested and executed which continues the process.  
+We create an object based on the values retrieved from the `vendor-encapsulated-options` section of the registry.  The object properties are used to construct the proper uri to the RESTful endpoint of Hanlon.  Since there isn't a method to pass boot time arguments to Windows we use WMI to determine the SMBIOS uuid which can be used in a RESTful request to retrieve the `active_model`.  
+Once the `active_model` is determined the `windows_install.erb` is requested and executed which continues the process.  
 
 ## Windows Install
 This script picks up where `hanlon-discover.ps1` leaves off.  The first task is where to grab the `install.wim`.  In order to deploy Windows without CIFS we needed a temporary location to store the `install.wim`, but the question was where to put it.  I knew that Windows setup would want the beginning of the disk for itself so why not create a partition at the end of the disk.  Using WMI to grab the size of the disk, we subtract 8GB and use that as the offset to diskpart.
@@ -154,7 +155,7 @@ And finally our last callback we use the RunSynchronousCommand and PowerShell.
 
 
 # Conclusion
-IMHO we have created a one of a kind, most automated installation mechanism for deploying Windows instances.  Without requiring a CIFS and the ability to inject drivers on the fly to the `install.wim` we have reduced complexity in deployment.  
+IMHO we have created a one of a kind, most automated installation mechanism for deploying Windows instances.  Without requiring a CIFS and the ability to inject drivers on the fly to the `install.wim` we have reduced complexity in Windows deployment.  
 
 # Acknowledgements
 
