@@ -162,7 +162,7 @@ IMHO we have created a one of a kind, most automated installation mechanism for 
 
 Without Tom we certainly not be here today.  He did extensive changes to the image slice, model slice, static location and modified the `app.rb` to support chunking significantly reducing memory requirements.  It has been educating experience and I am glad that I got the opportunity to work with him on this project.
 
-**Chris Yentha**
+**Chris Yantha**
 
 After struggling with the `unattend.xml` for hours, a single email to Chris provided us a working example that we could use in the `autounattend.erb`.
 
