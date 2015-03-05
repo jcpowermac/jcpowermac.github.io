@@ -93,8 +93,6 @@ This script picks up where `hanlon-discover.ps1` leaves off.  The first task is 
 {% highlight PowerShell %}
 
 $image_disk_size = 8
-
-# create partition for the install.wim download at the end of the disk
 $offset = [math]::floor((Get-WmiObject Win32_DiskDrive).size / 1024) - (1024*1024*$image_disk_size)
 
 $command = @"
@@ -113,11 +111,12 @@ I am sure some of you are wondering can I get that 8GB returned and the answer i
 
 Next we download the drivers, the `install.wim` and the `autounattend.erb`.  After those three files are downloaded we inject the required drivers into the `install.wim` using the DISM PowerShell cmdlets.
 
-{}% highlight PowerShell %}
+{% highlight PowerShell %}
 mount-windowsimage -imagepath "I:\install.wim" -index <%= wim_index %> -path "I:\mount-point" -erroraction stop
 Add-WindowsDriver -Recurse -Path "I:\mount-point" -Driver "I:\drivers"
 dismount-windowsimage -save -path "I:\mount-point" -erroraction stop
 {% endhighlight %}
+
 Therefore we don't force a user of Hanlon to modify their `install.wim` in anyway but can still provide the ability to install on hardware that may require specific drivers.  This also means potentially additional packages or updates could be injected to the image if desired.
 
 Once setup is complete there are a series of callback to Hanlon and finally the WinPE instance reboots.
@@ -138,7 +137,9 @@ To determine which edition of Windows to install and core vs GUI we use the foll
 </MetaData>
 
 {% endhighlight %}
+
 And finally to call our last callback we use the RunSynchronousCommand and PowerShell.
+
 {% highlight xml %}
 <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
             <RunSynchronous>
