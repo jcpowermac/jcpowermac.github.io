@@ -138,7 +138,7 @@ To determine which edition of Windows to install and core vs GUI we use the foll
 
 {% endhighlight %}
 
-And finally to call our last callback we use the RunSynchronousCommand and PowerShell.
+And finally our last callback we use the RunSynchronousCommand and PowerShell.
 
 {% highlight xml %}
 <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
@@ -151,6 +151,10 @@ And finally to call our last callback we use the RunSynchronousCommand and Power
             </RunSynchronous>
       </component>
 {% endhighlight %}
+
+
+# Conclusion
+IMHO we have created a one of a kind, most automated installation mechanism for deploying Windows instances.  Without requiring a CIFS and the ability to inject drivers on the fly to the `install.wim` we have reduced complexity in deployment.  
 
 # Acknowledgements
 
