@@ -16,19 +16,19 @@ Since building a WinPE image is required we tried to make it as painless and aut
 ### Image Details
 We add quite a few packages to the WinPE image, this includes:
 
-- WinPE-WMI.cab
-- WinPE-NetFx.cab
-- WinPE-Scripting.cab
-- WinPE-PowerShell.cab
-- WinPE-Setup.cab
-- WinPE-Setup-Server.cab
+- WinPE-WMI
+- WinPE-NetFx
+- WinPE-Scripting
+- WinPE-PowerShell
+- WinPE-Setup
+- WinPE-Setup-Server
 - WinPE-DismCmdlets
 
-There are a few to directly note.  We used PowerShell extensively in the hanlon-discovery and windows_install.erb, PowerShell is significantly easier to manage than legacy scripting languages, so WinPE-PowerShell is included.  WinPE-Setup-Server as named is the setup executable and files required to launch a Server based setup, which we need since we are not using CIFS mapped back to an extracted Windows ISO.  And finally including WinPE-DismCmdlets is our solution to adding drivers to the installed Windows image.
+There are a few to note directly.  We used PowerShell extensively in the hanlon-discovery and windows_install.erb, PowerShell is significantly easier to manage than legacy scripting languages, so WinPE-PowerShell is included.  WinPE-Setup-Server as named is the setup executable and files required to launch a Server based setup, which we need since we are not using CIFS mapped back to an extracted Windows ISO.  And finally including WinPE-DismCmdlets is our solution to adding drivers to the installed Windows image.
 
 ### Drivers
 
-To support your specific hardware at a minimum network and storage drivers will be required and available in `%SYSTEMDRIVE%\drivers` at the time of `build-winpe.ps1` execution.  The directory should not matter since we are using the recursive option with `Add-WindowsDriver` cmdlet.
+To support your specific hardware at a minimum network and storage drivers will be required and available in `%SYSTEMDRIVE%\drivers` at the time of `build-winpe.ps1` execution.  The directory structure should not matter since we are using the recursive option with `Add-WindowsDriver` cmdlet.
 
 ### Build Process
 
@@ -49,11 +49,11 @@ The build script performs the following actions:
 
 Open a new PowerShell prompt and execute the commands below.  The saved image will be in `%SYSTEMDRIVE%\winpe` named based on the current date and time.
 
-```
+{% highlight PowerShell %}
 Set-ExecutionPolicy Bypass -Confirm:$false -Force
 Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/csc/Hanlon/master/scripts/winpe/build-winpe.ps1' -OutFile build-winpe.ps1
 . .\build-winpe.ps1
-```
+{% endhighlight %}
 
 ### Video Demo of Build Process
 <iframe width="560" height="315" src="https://www.youtube.com/embed/aRKbiwEIJYw" frameborder="0" allowfullscreen></iframe>
@@ -65,14 +65,17 @@ The only third-party modification to WinPE image is the addition of the PowerShe
 We discovered last April that Windows DHCP client has no easy mechanism to support user-defined options without using the Win32 APIs.  Fortunately we ran across this [blog post](http://www.ingmarverheij.com/read-dhcp-options-received-by-the-client/) providing the necessary details and PowerShell script that we could start with to retrieve the Hanlon specific options from the DHCP server.  The Windows DHCP client supports `vendor-encapsulated-options` which can be used in conjunction with `vendor-option-space` to construct the encapsulated option.
 
 Creating a option space:
-```
+
+{% highlight bash %}
 option space hanlon;
 option hanlon.server code 224 = ip-address;
 option hanlon.port code 225 = unsigned integer 16;
 option hanlon.base_uri code 226 = text;
-```
+{% endhighlight %}
+
 Using within a subnet definition:
-```
+
+{% highlight bash %}
 class "MSFT" {
   match if substring (option vendor-class-identifier, 0, 4) = "MSFT";
   option hanlon.server 192.168.122.254;
@@ -80,7 +83,7 @@ class "MSFT" {
         option hanlon.base_uri "/hanlon/api/v1";
         vendor-option-space hanlon;
 }
-```
+{% endhighlight %}
 
 We create an object based on the values retrieved from the `vendor-encapsulated-options` section of the registry.  The object properties are used to construct the proper uri to the RESTful endpoint of Hanlon.  Since there isn't a method to pass boot time arguments to Windows we use WMI to determine the SMBIOS uuid to retrieve that data, which can be used in a RESTful request to retrieve the `active_model`.  Once the active_model is determined the `windows_install.erb` is requested and executed which continues the process.  
 
