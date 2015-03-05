@@ -3,262 +3,156 @@ layout: post
 title: Hanlon now supports Windows provisioning!
 ---
 
+It has been a long road but we finally have the ability to provision Windows in Hanlon.  Currently it is limited to Windows 2012 R2 but the foundation is available to create additional models for the various client and server versions.  The rest of the post is devoted to the Windows specific aspects of Hanlon provisioning a Windows instance, Tom McSweeney has created an excellent [blog post](https://osclouds.wordpress.com/?p=71) describing the server component changes
 
-# DHCP Changes
+# Design Details
 
-{% highlight bash %}
+One of the important goals of this effort was to make sure that Windows provisioning followed as close as possible to the design of existing OS images, models and policies.  This with the added constraint of avoiding a CIFS share if at all possible provides an incredibly unique solution for Windows installation.
 
+## WinPE Image
+
+Since building a WinPE image is required we tried to make it as painless and automated as possible.  We have included the `build-winpe.ps1` script within `${HANLON}/scripts/winpe`.
+
+### Image Details
+We add quite a few packages to the WinPE image, this includes:
+
+- WinPE-WMI.cab
+- WinPE-NetFx.cab
+- WinPE-Scripting.cab
+- WinPE-PowerShell.cab
+- WinPE-Setup.cab
+- WinPE-Setup-Server.cab
+- WinPE-DismCmdlets
+
+There are a few to directly note.  We used PowerShell extensively in the hanlon-discovery and windows_install.erb, PowerShell is significantly easier to manage than legacy scripting languages, so WinPE-PowerShell is included.  WinPE-Setup-Server as named is the setup executable and files required to launch a Server based setup, which we need since we are not using CIFS mapped back to an extracted Windows ISO.  And finally including WinPE-DismCmdlets is our solution to adding drivers to the installed Windows image.
+
+### Drivers
+
+To support your specific hardware at a minimum network and storage drivers will be required and available in `%SYSTEMDRIVE%\drivers` at the time of `build-winpe.ps1` execution.  The directory should not matter since we are using the recursive option with `Add-WindowsDriver` cmdlet.
+
+### Build Process
+
+The build script performs the following actions:
+
+- First, it creates a mount point for WinPE, a directory for the scripts we're adding to WinPE, and a directory for the drivers that are being added to WinPE if it doesn't already exist (these directories are created on the root of the system drive).
+- Next, it tests for an installation of [chocolatey](https://chocolatey.org/) and installs if unavailable.
+- Then install [Windows ADK](https://msdn.microsoft.com/en-us/library/hh825420.aspx) via chocolatey.  If this fails, execute our fall back method for installation.
+- Next, it copies the the winpe image (`winpe.wim`) from Windows ADK path to a temporary location and mounts that image locally.
+- It then adds a few additional (required) Windows packages to the winpe image
+- Next, it adds an English language pack to the winpe image
+- Then, it adds the drivers needed for network and storage in your hardware to the winpe image (from the `C:\Drivers` folder)
+- Next, it downloads the `hanlon-discover.ps1` script from Hanlon's GitHub repository and adds that script to the winpe image
+- Next, it creates a `startnet.cmd` script and adds it to the WinPE image, generates a language ini file, and modifies the winpe registry (to disable the CD-ROM when the winpe image boots).
+- Finally, it unmounts the winpe image and renames the resulting image based on date and time.
+
+### Execution of build-winpe.ps1
+
+Open a new PowerShell prompt and execute the commands below.  The saved image will be in `%SYSTEMDRIVE%\winpe` named based on the current date and time.
+
+```
+Set-ExecutionPolicy Bypass -Confirm:$false -Force
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/csc/Hanlon/master/scripts/winpe/build-winpe.ps1' -OutFile build-winpe.ps1
+. .\build-winpe.ps1
+```
+
+### Video Demo of Build Process
+<iframe width="560" height="315" src="https://www.youtube.com/embed/aRKbiwEIJYw" frameborder="0" allowfullscreen></iframe>
+
+
+## Hanlon Discover
+The only third-party modification to WinPE image is the addition of the PowerShell script `hanlon-discover.ps1`.  The only purpose of this script is to determine the location of the Hanlon server and execute the `windows_install.erb`.
+
+We discovered last April that Windows DHCP client has no easy mechanism to support user-defined options without using the Win32 APIs.  Fortunately we ran across this [blog post](http://www.ingmarverheij.com/read-dhcp-options-received-by-the-client/) providing the necessary details and PowerShell script that we could start with to retrieve the Hanlon specific options from the DHCP server.  The Windows DHCP client supports `vendor-encapsulated-options` which can be used in conjunction with `vendor-option-space` to construct the encapsulated option.
+
+Creating a option space:
+```
 option space hanlon;
 option hanlon.server code 224 = ip-address;
 option hanlon.port code 225 = unsigned integer 16;
 option hanlon.base_uri code 226 = text;
-
-
-option hanlon_server code 224 = ip-address;
-option hanlon_port code 225 = unsigned integer 16;
-option hanlon_base_uri code 226 = text;
-
-
-subnet 192.168.122.0 netmask 255.255.255.0 {
-	class "MSFT" {
-		match if substring (option vendor-class-identifier, 0, 4) = "MSFT";
-		option hanlon.server 192.168.122.254;
-        	option hanlon.port 8026;
-	        option hanlon.base_uri "/hanlon/api/v1";
-        	vendor-option-space hanlon;
-	}	
-	class "OTHER" {
-		match if substring (option vendor-class-identifier, 0, 4) != "MSFT";
-		option hanlon_server 192.168.122.254;
-        	option hanlon_port 8026;
-	        option hanlon_base_uri "/hanlon/api/v1";
-	}
-
-
-        range 192.168.122.100 192.168.122.200;
-        option routers 192.168.122.1;
-        option subnet-mask 255.255.255.0;
-        option domain-name              "automation.local";
-        next-server 192.168.122.254;
-        option tftp-server-name "192.168.122.254"; 	
-
-        if exists user-class and option user-class = "iPXE" {
-                filename "hanlon.ipxe";
-        } else {
-                filename "undionly.kpxe";
-        }
+```
+Using within a subnet definition:
+```
+class "MSFT" {
+  match if substring (option vendor-class-identifier, 0, 4) = "MSFT";
+  option hanlon.server 192.168.122.254;
+        option hanlon.port 8026;
+        option hanlon.base_uri "/hanlon/api/v1";
+        vendor-option-space hanlon;
 }
+```
 
-{% endhighlight %}
+We create an object based on the values retrieved from the `vendor-encapsulated-options` section of the registry.  The object properties are used to construct the proper uri to the RESTful endpoint of Hanlon.  Since there isn't a method to pass boot time arguments to Windows we use WMI to determine the SMBIOS uuid to retrieve that data, which can be used in a RESTful request to retrieve the `active_model`.  Once the active_model is determined the `windows_install.erb` is requested and executed which continues the process.  
 
-# WinPE Build Process
+## Windows Install
+This script picks up where `hanlon-discover.ps1` leaves off.  The first task is where to grab the `install.wim`.  In order to deploy Windows without CIFS we needed a temporary location to store the `install.wim`, but the question was where to put it.  I knew that Windows setup would want the beginning of the disk for itself so why not create a partition at the end of the disk.  Using WMI to grab the size of the disk, we subtract 8GB and use that as the offset to diskpart.
+```
+$image_disk_size = 8
 
-We tried to make this as painless as possible.  
+# create partition for the install.wim download at the end of the disk
+$offset = [math]::floor((Get-WmiObject Win32_DiskDrive).size / 1024) - (1024*1024*$image_disk_size)
 
-
-
-
-{% highlight PowerShell linenos %}
-
-#!powershell
-
-###
-#
-# Utilized Code various code from multiple locations
-# Sources:
-# http://stackoverflow.com/questions/5648931/test-if-registry-value-exists
-# https://github.com/puppetlabs/razor-server/blob/master/build-winpe/build-razor-winpe.ps1
-###
-
-
-###
-# Define Local Static Variables
-# winpeCabs - These are all the CABS that need to be installed to install Windows
-###
-
-
-$DebugPreference = "Continue"
-
-$PackageCabs = @( "WinPE-WMI.cab", "WinPE-NetFx.cab",
-				"WinPE-Scripting.cab", "WinPE-PowerShell.cab",
-				"WinPE-Setup.cab", "WinPE-Setup-Server.cab")
-
-$LangPackageCabs = @( "lp.cab",
-                      "WinPE-Setup_en-us.cab",
-                      "WinPE-Setup-Server_en-us.cab" )
-
-$SubPathWinPeImage = "Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\en-us\winpe.wim"
-$SubPathPackages = "Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs"
-$SubPathLangPackages = "Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\en-us"
-
-$MountPath = "$env:SystemDrive\mount-point"
-$WimPath = "$env:SystemDrive\winpe"
-$ScriptPath = "$env:SystemDrive\script"
-$DriversPath = "$env:SystemDrive\drivers"
-
-$paths = @($MountPath,$WimPath,$ScriptPath,$DriversPath)
-
-
-Function Test-RegistryValue {
-    param(
-        [Alias("PSPath")]
-        [Parameter(Position = 0, Mandatory = $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
-        [String]$Path
-        ,
-        [Parameter(Position = 1, Mandatory = $true)]
-        [String]$Name
-        ,
-        [Switch]$PassThru
-    )
-
-    process {
-        if (Test-Path $Path) {
-            $Key = Get-Item -LiteralPath $Path
-            if ($Key.GetValue($Name, $null) -ne $null) {
-                if ($PassThru) {
-                    Get-ItemProperty $Path $Name
-                } else {
-                    $true
-                }
-            } else {
-                $false
-            }
-        } else {
-            $false
-        }
-    }
-}
-function test-administrator {
-    $identity  = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = New-Object Security.Principal.WindowsPrincipal($Identity)
-    $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-}
-function get-currentdirectory {
-    $thisName = $MyInvocation.MyCommand.Name
-    [IO.Path]::GetDirectoryName((Get-Content function:$thisName).File)
-}
-
-
-if (-not (test-administrator)) {
-    write-error @"
-You must be running as administrator for this script to function.
-Unfortunately, we can't reasonable elevate privileges ourselves
-so you need to launch an administrator mode command shell and then
-re-run this script yourself.
-"@
-    exit 1
-}
-
-
-# Lets create directories for WinPE build
-foreach ($p in $paths ) {
-    if (-not (test-path -path $p)) {
-        new-item -type directory $p
-    }
-}
-
-
-###
-# In order to create a WinPE image we need the ADK.  To automate the process of installing
-# the ADk we can use Chocolatey, lets install that now...
-###
-
-$result = Test-RegistryValue -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows Kits\Installed Roots\" -Name "KitsRoot81"
-
-if(-not $result) {
-
-    iex ((new-object net.webclient).DownloadString('https://chocolatey.org/install.ps1'))
-
-###
-# Install Windows ADK only WinPE requirements
-###
-    choco install windows-adk-winpe -y
-}
-# OK where is the ADK?
-
-$KitsRoot81 = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows Kits\Installed Roots\" -Name "KitsRoot81").KitsRoot81
-
-$wim = Join-Path $KitsRoot81 $SubPathWinPeImage
-Write-Debug $wim
-
-Copy-Item $wim $WimPath
-
-mount-windowsimage -imagepath "$WimPath\winpe.wim" -index 1 -path $MountPath -erroraction stop
-
-
-foreach ($cab in $PackageCabs ) {
-    write-host "** Installing $cab to image"
-    # there must be a way to do this without a temporary variable
-    $path = "$KitsRoot81$SubPathPackages"
-
-    $pkg = join-path $path "$cab"
-    Write-Debug $pkg
-    add-windowspackage -packagepath $pkg -path $MountPath
-}
-
-foreach ($cab in $LangPackageCabs ) {
-    write-host "** Installing $cab to image"
-    # there must be a way to do this without a temporary variable
-    $path = "$KitsRoot81$SubPathLangPackages"
-
-    $pkg = join-path $path "$cab"
-    Write-Debug $pkg
-    add-windowspackage -packagepath $pkg -path $MountPath
-}
-
-
-Write-Host "** Installing Drivers to image"
-Add-WindowsDriver -Recurse -Path $MountPath -Driver $DriversPath
-
-write-host "* Writing startup PowerShell script"
-$file   = join-path $MountPath "hanlon-discover.ps1"
-$client = join-path $ScriptPath "hanlon-discover.ps1"
-copy-item $client $file
-
-write-host "* Writing Windows\System32\startnet.cmd script"
-$file = join-path $MountPath "Windows\System32\startnet.cmd"
-set-content $file @"
-@echo off
-echo Starting wpeinit...
-wpeinit
-echo Starting Hanlon discover and callbacks...
-powershell -executionpolicy bypass -file %SYSTEMDRIVE%\hanlon-discover.ps1
-echo dropping to a command shell now...
+$command = @"
+select disk 0
+clean
+create partition primary offset=$offset
+select volume 0
+format fs=ntfs label=image quick
+assign letter=I
 "@
 
-write-host "* Removing setup.exe from image"
-$setup = join-path $MountPath "setup.exe"
-Write-Debug $setup
-Remove-Item $setup -ErrorAction SilentlyContinue
+$command | diskpart
+```
+I am sure some of you are wondering can I get that 8GB returned and the answer is yes.  Just delete the partition and extend the system drive within Disk Management.  In a follow up we will be adding additional scripts that could perform this action.
 
-Write-Host "* Generate Language Files"
-dism /image:$MountPath /gen-langini /distribution:$MountPath
+Next we download the drivers, the `install.wim` and the `autounattend.erb`.  After those three files are downloaded we inject the required drivers into the `install.wim` using the DISM PowerShell cmdlets.
 
-write-host "* Unmounting and saving the wim image"
+```
+mount-windowsimage -imagepath "I:\install.wim" -index <%= wim_index %> -path "I:\mount-point" -erroraction stop
+Add-WindowsDriver -Recurse -Path "I:\mount-point" -Driver "I:\drivers"
+dismount-windowsimage -save -path "I:\mount-point" -erroraction stop
+```
+Therefore we don't force a user of Hanlon to modify their `install.wim` in anyway but can still provide the ability to install on hardware that may require specific drivers.  This also means potentially additional packages or updates could be injected to the image if desired.
 
-dismount-windowsimage -save -path $MountPath -erroraction stop
+Once setup is complete there are a series of callback to Hanlon and finally the WinPE instance reboots.
 
-Write-Host "* Moving winpe.wim to with date"
-$date = get-date -format M-d-yyyy-Hmm
+## Auto Unattend
 
-Move-Item "$WimPath\winpe.wim" "$WimPath\winpe-$date.wim"
+The `autounattend.erb` is very simple as an `unattend.xml` usually is.  I think there is only a few things to point out.  Since we are creating a partition at the end of the disk I need to make sure `WillWipeDisk` is set to false
 
+```
+<WillWipeDisk>false</WillWipeDisk>
+```
+To determine which edition of Windows to install and core vs GUI we use the following option:
+```
+<MetaData>
+<Key>/IMAGE/INDEX</Key>
+<Value><%= wim_index %></Value>
+</MetaData>
+```
+And finally to call our last callback we use the RunSynchronousCommand and PowerShell.
+```
+<component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+            <RunSynchronous>
+                <RunSynchronousCommand wcm:action="add">
+                    <Order>1</Order>
+                    <Path>powershell -NoLogo -Command "Invoke-WebRequest -Uri  <%= callback_url("postinstall", "final") %> -Method GET -UseBasicParsing"</Path>
+                    <Description>Hanlon Postinstall Final</Description>
+                </RunSynchronousCommand>
+            </RunSynchronous>
+      </component>
+```
 
-{% endhighlight %}
+# Acknowledgements
 
-# WinPE Hanlon Static Location
+**Tom McSweeney**
 
-Within your static location three files must be present, boot.wim, BCD and boot.sdi.
+Without Tom we certainly not be here today.  He did extensive changes to the image slice, model slice, static location and modified the `app.rb` to support chunking significantly reducing memory requirements.  It has been educating experience and I am glad that I got the opportunity to work with him on this project.
 
-{% highlight bash %}
+**Chris Yentha**
 
-wimboot
-sources
-└── boot.wim
-boot
-├── bcd
-├── BCD
-└── boot.sdi
+After struggling with the `unattend.xml` for hours, a single email to Chris provided us a working example that we could use in the `autounattend.erb`.
 
+**Russell Teague and Aaron Dean**
 
-{% endhighlight %}
+Both Russell and Aaron provided moral support and offloading of tasks to allow us to continue with this initiative.  
