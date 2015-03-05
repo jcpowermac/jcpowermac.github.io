@@ -85,11 +85,13 @@ class "MSFT" {
 }
 {% endhighlight %}
 
-We create an object based on the values retrieved from the `vendor-encapsulated-options` section of the registry.  The object properties are used to construct the proper uri to the RESTful endpoint of Hanlon.  Since there isn't a method to pass boot time arguments to Windows we use WMI to determine the SMBIOS uuid to retrieve that data, which can be used in a RESTful request to retrieve the `active_model`.  Once the active_model is determined the `windows_install.erb` is requested and executed which continues the process.  
+We create an object based on the values retrieved from the `vendor-encapsulated-options` section of the registry.  The object properties are used to construct the proper uri to the RESTful endpoint of Hanlon.  Since there isn't a method to pass boot time arguments to Windows we use WMI to determine the SMBIOS uuid which can be used in a RESTful request to retrieve the `active_model`.  Once the active_model is determined the `windows_install.erb` is requested and executed which continues the process.  
 
 ## Windows Install
 This script picks up where `hanlon-discover.ps1` leaves off.  The first task is where to grab the `install.wim`.  In order to deploy Windows without CIFS we needed a temporary location to store the `install.wim`, but the question was where to put it.  I knew that Windows setup would want the beginning of the disk for itself so why not create a partition at the end of the disk.  Using WMI to grab the size of the disk, we subtract 8GB and use that as the offset to diskpart.
-```
+
+{% highlight PowerShell %}
+
 $image_disk_size = 8
 
 # create partition for the install.wim download at the end of the disk
@@ -105,16 +107,17 @@ assign letter=I
 "@
 
 $command | diskpart
-```
+{% endhighlight %}
+
 I am sure some of you are wondering can I get that 8GB returned and the answer is yes.  Just delete the partition and extend the system drive within Disk Management.  In a follow up we will be adding additional scripts that could perform this action.
 
 Next we download the drivers, the `install.wim` and the `autounattend.erb`.  After those three files are downloaded we inject the required drivers into the `install.wim` using the DISM PowerShell cmdlets.
 
-```
+{}% highlight PowerShell %}
 mount-windowsimage -imagepath "I:\install.wim" -index <%= wim_index %> -path "I:\mount-point" -erroraction stop
 Add-WindowsDriver -Recurse -Path "I:\mount-point" -Driver "I:\drivers"
 dismount-windowsimage -save -path "I:\mount-point" -erroraction stop
-```
+{% endhighlight %}
 Therefore we don't force a user of Hanlon to modify their `install.wim` in anyway but can still provide the ability to install on hardware that may require specific drivers.  This also means potentially additional packages or updates could be injected to the image if desired.
 
 Once setup is complete there are a series of callback to Hanlon and finally the WinPE instance reboots.
@@ -123,18 +126,20 @@ Once setup is complete there are a series of callback to Hanlon and finally the 
 
 The `autounattend.erb` is very simple as an `unattend.xml` usually is.  I think there is only a few things to point out.  Since we are creating a partition at the end of the disk I need to make sure `WillWipeDisk` is set to false
 
-```
+{% highlight xml %}
 <WillWipeDisk>false</WillWipeDisk>
-```
+{% endhighlight %}
+
 To determine which edition of Windows to install and core vs GUI we use the following option:
-```
+{% highlight xml %}
 <MetaData>
 <Key>/IMAGE/INDEX</Key>
 <Value><%= wim_index %></Value>
 </MetaData>
-```
+
+{% endhighlight %}
 And finally to call our last callback we use the RunSynchronousCommand and PowerShell.
-```
+{% highlight xml %}
 <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
             <RunSynchronous>
                 <RunSynchronousCommand wcm:action="add">
@@ -144,7 +149,7 @@ And finally to call our last callback we use the RunSynchronousCommand and Power
                 </RunSynchronousCommand>
             </RunSynchronous>
       </component>
-```
+{% endhighlight %}
 
 # Acknowledgements
 
