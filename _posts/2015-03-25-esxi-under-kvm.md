@@ -1,11 +1,11 @@
 ---
 layout: post
-title: Running Nested ESXi and vCenter Appliance under KVM
+title: Where ESXi belongs; nested under KVM
 ---
 
-I can hear it now why would I want to do that?  Well for me the motivation was I need to test vSphere (ESXi and vCenter) automation and I don't want to install VMware Workstation to do it.
+I can hear it now, why would I want to do that?  Well for me the motivation was I need to test vSphere (ESXi and vCenter) automation and I don't want to install VMware Workstation to do it.
 
-# First up, Nested ESXi
+## First up, Nested ESXi
 As always dependencies are first.  I am using Fedora 21 so the packages commands will be related.
 
 {% highlight bash %}
@@ -13,8 +13,10 @@ yum groupinstall "Development Tools" -y
 yum install gcc-c++ glib2-devel zlibrary zlib-devel pixman-devel libfdt-devel spice-protocol SDL-devel spice-server-devel -y
 {% endhighlight %}
 
-
-QEMU has changed since this [post](https://communities.vmware.com/message/2292878#2292878) was originally written and so then we must modify the patch.
+### QEMU Changes
+Fortunately we have some [very smart people at VMware](https://communities.vmware.com/people/jmattson) that are willing to help our crazy cause.
+QEMU has changed since this [post](https://communities.vmware.com/message/2292878#2292878) was originally written and so we must modify the patch.
+Below are the modifications required for QEMU 2.3, which is the latest development release - your mileage my vary kinda a thing but I haven't had a problem yet.
 
 {% highlight diff %}
 diff --git a/hw/i386/pc_piix.c b/hw/i386/pc_piix.c
@@ -32,6 +34,9 @@ index 36c69d7..6952bb3 100644
      pc_nic_init(isa_bus, pci_bus);
 {% endhighlight %}
 
+With the modified QEMU lets get the source, patch and recompile.
+
+### Patch and compile QEMU
 {% highlight bash %}
 cd /opt
 sudo git clone https://github.com/qemu/qemu.git
@@ -42,13 +47,17 @@ sudo make -j8
 sudo wget "https://gist.githubusercontent.com/jcpowermac/36bfa62cd60781264b3f/raw/f26aa286d5ab85f17555141e04ab549e10727475/qemu-kvm"
 {% endhighlight %}
 
+This will leave our original QEMU install untouched, which is probably a good thing.  Next up we need to define a virtual machine.
 
-Below is an example domain specifically for 5.5 because of the inclusion of vmxnet3 adapter, the e1000 will not work.
+### Create the ESXi virtual machine
+
+There is an issue with ESXi 5.5 and the e1000 network adapter, so we have no real choice except to use vmxnet3.
+Below is an example domain specifically for 5.5 because of the inclusion of vmxnet3 adapter.
 ESXi 6.0 can and [should](https://communities.vmware.com/message/2446952#2446952) be using e1000.
 
 {% highlight xml %}
 <domain type='kvm' id='12'>
-  <name>esxi2</name>
+  <name>esxi</name>
   <memory unit='KiB'>4194304</memory>
   <currentMemory unit='KiB'>4194304</currentMemory>
   <vcpu placement='static'>2</vcpu>
@@ -125,11 +134,12 @@ ESXi 6.0 can and [should](https://communities.vmware.com/message/2446952#2446952
 {% endhighlight %}
 
 
-
-
-# Now vCenter...
-
-
+To define a new guest, do the following.  A cd-rom will need to be added and most likely source bridge will need to be changed but the general hardware will be correct.
+Any of those changes can be done in virt-manager.
+{% highlight bash %}
+wget "https://gist.githubusercontent.com/jcpowermac/05e2faa322427f28b907/raw/6149bcc2e5420d13afa96d0f58abc91d6dc84058/esxi.xml"
+sudo virsh define esxi.xml
+{% endhighlight %}
 
 ### Sources
 https://communities.vmware.com/thread/451412
