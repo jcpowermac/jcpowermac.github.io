@@ -1,9 +1,9 @@
 ---
 layout: post
-title: Where ESXi belongs; nested under KVM
+title: Where ESXi belongs - Nested under KVM
 ---
 
-I can hear it now, why would I want to do that?  Well for me the motivation was I need to test vSphere (ESXi and vCenter) automation and I don't want to install VMware Workstation to do it.
+I can hear it now, why would you want to do that?  Well for me the motivation was I need to test vSphere (ESXi and vCenter) automation and I don't want to install VMware Workstation to do it.
 
 ## First up, Nested ESXi
 As always dependencies are first.  I am using Fedora 21 so the packages commands will be related.
