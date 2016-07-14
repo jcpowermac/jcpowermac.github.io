@@ -17,7 +17,7 @@ powershell -command "& {Invoke-Expression ((New-Object System.Net.Webclient).Dow
 
 #### Method #2 - VMware Tools
 
-With VMware Tools installed the configuration of WinRM can be executed via the guest operations API.  There is already an Ansible module - [vmware_vm_shell](https://docs.ansible.com/ansible/vmware_vm_shell_module.html) available for us.  The [playbook](https://github.com/jcpowermac/ansible-vsphere-winrm/blob/master/site.yml) is available below.
+With VMware Tools installed the configuration of WinRM can be executed via the guest operations API.  There is already an Ansible module - [vmware_vm_shell](https://docs.ansible.com/ansible/vmware_vm_shell_module.html) available for use.  The [playbook](https://github.com/jcpowermac/ansible-vsphere-winrm/blob/master/site.yml) is available below.
 
 
 ```yaml
